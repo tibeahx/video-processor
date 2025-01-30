@@ -1,22 +1,24 @@
 package main
 
 import (
-	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
-
-	ffmpeg "github.com/u2takey/ffmpeg-go"
 )
 
 var folders = []string{"audio", "video"}
 
-func ProcessVideo(sourcePath string) error {
+func main() {
+	sourcePath := "source/IMG_8435.MOV"
+	if err := processInput(sourcePath); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func processInput(sourcePath string) error {
 	if err := cleanUp(folders); err != nil {
 		return err
 	}
@@ -58,114 +60,18 @@ func ProcessVideo(sourcePath string) error {
 		return err
 	}
 
-	if err := splitVideoIntoChunks(videoOut, 5); err != nil {
-		return fmt.Errorf("failed to split video: %w", err)
-	}
-
-	os.Remove(videoOut)
-	return nil
-}
-
-func extractAudio(source, output string) error {
-	return ffmpeg.Input(source).
-		Output(output, ffmpeg.KwArgs{
-			"vn":     "",
-			"acodec": "libmp3lame",
-		}).
-		OverWriteOutput().
-		Run()
-}
-
-func extractVideo(source, output string) error {
-	return ffmpeg.Input(source).
-		Output(output, ffmpeg.KwArgs{
-			"c:v": "copy",
-			"an":  "",
-		}).
-		OverWriteOutput().
-		Run()
-}
-
-func splitVideoIntoChunks(videoPath string, chunkSize int) error {
-	probe, err := ffmpeg.Probe(videoPath)
+	processor, err := newVideoProcessor(videoOut, 7)
 	if err != nil {
-		return fmt.Errorf("failed to probe video file: %w", err)
-	}
-	if probe == "" {
-		return errors.New("failed to probe video file: empty probe result")
+		return fmt.Errorf("failed to create video processor: %w", err)
 	}
 
-	baseDir := filepath.Dir(videoPath)
-	baseName := strings.TrimSuffix(filepath.Base(videoPath), filepath.Ext(videoPath))
-	chunkPattern := filepath.Join(baseDir, fmt.Sprintf("%s_chunk_%%03d.mp4", baseName))
-
-	return ffmpeg.Input(videoPath).
-		Output(chunkPattern, ffmpeg.KwArgs{
-			"c":                   "copy",
-			"f":                   "segment",
-			"segment_time":        chunkSize,
-			"reset_timestamps":    1,
-			"segment_format":      "mp4",
-			"break_non_keyframes": 1,
-		}).
-		OverWriteOutput().
-		Run()
-}
-
-func getVideoDuration(videoPath string) (float64, error) {
-	probe, err := ffmpeg.Probe(videoPath)
-	if err != nil {
-		return 0, fmt.Errorf("failed to probe video: %w", err)
-	}
-	if probe == "" {
-		return 0, errors.New("empty probe result")
+	if err := processor.process(); err != nil {
+		return fmt.Errorf("failed to process video: %w", err)
 	}
 
-	var probeData struct {
-		Format struct {
-			Duration string `json:"duration"`
-		} `json:"format"`
-	}
-
-	if err := json.Unmarshal([]byte(probe), &probeData); err != nil {
-		return 0, fmt.Errorf("failed to parse probe data: %w", err)
-	}
-
-	duration, err := strconv.ParseFloat(probeData.Format.Duration, 64)
-	if err != nil {
-		return 0, fmt.Errorf("failed to parse duration: %w", err)
-	}
-
-	return duration, nil
-}
-
-func prepare(folders []string) error {
-	if folders == nil {
-		return errors.New("nil folders")
-	}
-
-	for _, folder := range folders {
-		if err := os.MkdirAll(folder, 0755); err != nil {
-			return fmt.Errorf("failed to create dir %s: %w", folder, err)
-		}
+	if err := os.Remove(videoOut); err != nil {
+		return fmt.Errorf("failed to remove temporary video file: %w", err)
 	}
 
 	return nil
-}
-
-func cleanUp(dirsToClean []string) error {
-	for _, dir := range dirsToClean {
-		if err := os.RemoveAll(dir); err != nil {
-			return fmt.Errorf("failed to remove %s: %w", dir, err)
-		}
-	}
-
-	return nil
-}
-
-func main() {
-	sourcePath := "source/IMG_8435.MOV"
-	if err := ProcessVideo(sourcePath); err != nil {
-		log.Fatal(err)
-	}
 }

@@ -10,34 +10,20 @@ import (
 	ffmpeg "github.com/u2takey/ffmpeg-go"
 )
 
-type splitConfig struct {
+type chunkOptions struct {
 	totalChunks       float64
 	regularChunks     float64
 	lastChunkDuration float64
 }
-
-type videoChunk struct {
-	StartTime  int
-	Duration   float64
-	OutputPath string
-}
-
-type splitterConfig struct {
-	sourcePath string
-	chunkSize  int
-	baseDir    string
-	baseName   string
-}
-
 type videoSplitter struct {
-	config   splitterConfig
-	splitCfg splitConfig
+	params splitterParams
+	opts   chunkOptions
 }
 
-func crateSplitConfig(videoPath string, chunkSize int) (splitConfig, error) {
+func newSplitConfig(videoPath string, chunkSize int) (chunkOptions, error) {
 	duration, err := getVideoDuration(videoPath)
 	if err != nil {
-		return splitConfig{}, err
+		return chunkOptions{}, err
 	}
 
 	regularChunks := math.Floor(duration / float64(chunkSize))
@@ -48,11 +34,18 @@ func crateSplitConfig(videoPath string, chunkSize int) (splitConfig, error) {
 		totalChunks++
 	}
 
-	return splitConfig{
+	return chunkOptions{
 		totalChunks:       totalChunks,
 		regularChunks:     regularChunks,
 		lastChunkDuration: lastChunkDuration,
 	}, nil
+}
+
+type splitterParams struct {
+	sourcePath string
+	chunkSize  int
+	baseDir    string
+	baseName   string
 }
 
 func newVideoSplitter(sourcePath string, chunkSize int) (*videoSplitter, error) {
@@ -63,12 +56,12 @@ func newVideoSplitter(sourcePath string, chunkSize int) (*videoSplitter, error) 
 	baseDir := filepath.Dir(sourcePath)
 	baseName := strings.TrimSuffix(filepath.Base(sourcePath), filepath.Ext(sourcePath))
 
-	splitCfg, err := crateSplitConfig(sourcePath, chunkSize)
+	splitCfg, err := newSplitConfig(sourcePath, chunkSize)
 	if err != nil {
 		return nil, err
 	}
 
-	config := splitterConfig{
+	p := splitterParams{
 		sourcePath: sourcePath,
 		chunkSize:  chunkSize,
 		baseDir:    baseDir,
@@ -76,13 +69,19 @@ func newVideoSplitter(sourcePath string, chunkSize int) (*videoSplitter, error) 
 	}
 
 	return &videoSplitter{
-		config:   config,
-		splitCfg: splitCfg,
+		params: p,
+		opts:   splitCfg,
 	}, nil
 }
 
+type videoChunk struct {
+	StartTime  int
+	Duration   float64
+	OutputPath string
+}
+
 func (vs *videoSplitter) splitChunk(chunk videoChunk) error {
-	return runFFmpeg(vs.config.sourcePath, chunk.OutputPath, ffmpeg.KwArgs{
+	return runFFmpeg(vs.params.sourcePath, chunk.OutputPath, ffmpeg.KwArgs{
 		"ss": chunk.StartTime,
 		"t":  chunk.Duration,
 		"c":  "copy",
@@ -90,14 +89,14 @@ func (vs *videoSplitter) splitChunk(chunk videoChunk) error {
 }
 
 func (vs *videoSplitter) generateChunkPath(index int) string {
-	return filepath.Join(vs.config.baseDir, fmt.Sprintf("%s_chunk_%03d.mp4", vs.config.baseName, index))
+	return filepath.Join(vs.params.baseDir, fmt.Sprintf("%s_chunk_%03d.mp4", vs.params.baseName, index))
 }
 
 func (vs *videoSplitter) splitRegularChunks() error {
-	for i := 0; i < int(vs.splitCfg.regularChunks); i++ {
+	for i := 0; i < int(vs.opts.regularChunks); i++ {
 		chunk := videoChunk{
-			StartTime:  i * vs.config.chunkSize,
-			Duration:   float64(vs.config.chunkSize),
+			StartTime:  i * vs.params.chunkSize,
+			Duration:   float64(vs.params.chunkSize),
 			OutputPath: vs.generateChunkPath(i),
 		}
 
@@ -109,14 +108,14 @@ func (vs *videoSplitter) splitRegularChunks() error {
 }
 
 func (vs *videoSplitter) splitLastChunk() error {
-	if vs.splitCfg.lastChunkDuration <= 0 {
+	if vs.opts.lastChunkDuration <= 0 {
 		return nil
 	}
 
 	chunk := videoChunk{
-		StartTime:  int(vs.splitCfg.regularChunks) * vs.config.chunkSize,
-		Duration:   vs.splitCfg.lastChunkDuration,
-		OutputPath: vs.generateChunkPath(int(vs.splitCfg.regularChunks)),
+		StartTime:  int(vs.opts.regularChunks) * vs.params.chunkSize,
+		Duration:   vs.opts.lastChunkDuration,
+		OutputPath: vs.generateChunkPath(int(vs.opts.regularChunks)),
 	}
 
 	if err := vs.splitChunk(chunk); err != nil {

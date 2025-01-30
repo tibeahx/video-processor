@@ -60,13 +60,13 @@ func processInput(sourcePath string) error {
 		return err
 	}
 
-	processor, err := newVideoProcessor(videoOut, 7)
+	splitter, err := newVideoSplitter(videoOut, 7)
 	if err != nil {
-		return fmt.Errorf("failed to create video processor: %w", err)
+		return fmt.Errorf("failed to create video splitter: %w", err)
 	}
 
-	if err := processor.process(); err != nil {
-		return fmt.Errorf("failed to process video: %w", err)
+	if err := splitter.split(); err != nil {
+		return fmt.Errorf("failed to split video: %w", err)
 	}
 
 	if err := os.Remove(videoOut); err != nil {

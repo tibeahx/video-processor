@@ -15,6 +15,7 @@ type chunkOptions struct {
 	regularChunks     float64
 	lastChunkDuration float64
 }
+
 type videoSplitter struct {
 	params splitterParams
 	opts   chunkOptions

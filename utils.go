@@ -40,17 +40,17 @@ func getVideoDuration(videoPath string) (float64, error) {
 		return 0, errors.New("empty probe result")
 	}
 
-	var probeData struct {
+	var probeWrapper struct {
 		Format struct {
 			Duration string `json:"duration"`
 		} `json:"format"`
 	}
 
-	if err := json.Unmarshal([]byte(probe), &probeData); err != nil {
+	if err := json.Unmarshal([]byte(probe), &probeWrapper); err != nil {
 		return 0, fmt.Errorf("failed to parse probe data: %w", err)
 	}
 
-	duration, err := strconv.ParseFloat(probeData.Format.Duration, 64)
+	duration, err := strconv.ParseFloat(probeWrapper.Format.Duration, 64)
 	if err != nil {
 		return 0, fmt.Errorf("failed to parse duration: %w", err)
 	}
